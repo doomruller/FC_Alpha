@@ -1,0 +1,10 @@
+## Interface: 60200
+## Title: FC Alpha
+## Version: 0.8
+## SavedVariables: FC_AlphaDB
+## Author: Doomruller
+
+embeds.xml
+FC_Utils.lua
+CouncilFrame.xml
+LootPopup.xml
