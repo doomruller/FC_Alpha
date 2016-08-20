@@ -1,4 +1,4 @@
-local addon = LibStub("AceAddon-3.0"):GetAddon("FusedCouncilAlpha");
+local addon = LibStub("AceAddon-3.0"):GetAddon("FusedCouncil");
 local lootPopup = addon:NewModule("FC_LootPopup", "AceTimer-3.0", "AceComm-3.0", "AceSerializer-3.0");
 
 local lootPopupFrame;

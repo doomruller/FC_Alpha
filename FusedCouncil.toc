@@ -1,7 +1,7 @@
 ## Interface: 60200
-## Title: FC Alpha
+## Title: FusedCouncil
 ## Version: 0.8
-## SavedVariables: FC_AlphaDB
+## SavedVariables: FusedCouncilDB
 ## Author: Doomruller
 
 embeds.xml
