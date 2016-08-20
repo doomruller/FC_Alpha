@@ -493,9 +493,9 @@ function FusedCouncil:CommHandler(prefix, message, distrubtuion, sender)
 					  if item then
 						item= self:remakeItemLink(item);
 					   end
-					  if item and item == payload["itemLink"] then
+					  if item and item == payload["item"]["itemLink"] then
 						print("recived " .. item);
-						self:sendACK("give", sender, sessionID, item);
+						self:sendACK("give", sender, sessionID, payload["item"]);
 					  end
 					end
 				  end
@@ -563,12 +563,52 @@ function FusedCouncil:CommHandler(prefix, message, distrubtuion, sender)
 				if payload["type"] == "give" then
 					self:dbug("recived give ack from " .. sender);
 					for i=#giveTimers, 1 , -1 do
-						if giveTimers[i]["itemLink"] == payload["item"] and giveTimers[i]["player"] == sender then
+						if giveTimers[i]["itemLink"] == payload["item"]["itemLink"] and giveTimers[i]["player"] == sender then
 							 self:CancelTimer(giveTimers[i]);
 							 table.remove(giveTimers, i);
 							 print("removed give ack timer")
 						end
 					end
+					
+					-- switch to new item
+					if #givenItemBank == 0 then		
+						local tempItem = self:copyItem(payload["item"]);
+						table.insert(givenItemBank, tempItem);
+						table.insert(tempItem["givenTo"], playername);
+					else
+					
+						for i=1, #givenItemBank do
+							local item = self:findItem(payload["item"]["itemLink"], givenItemBank);
+							if item then
+								item["count"] = item["count"] + 1;
+								table.insert(item["givenTo"], playername);
+							else
+								-- may need to copy item instead
+								local tempItem = self:copyItem(payload["item"]);
+								table.insert(givenItemBank, tempItem);
+								table.insert(tempItem["givenTo"], playername);
+							end
+						end
+					
+					
+					
+					end
+					if payload["item"]["count"] == 1 then
+						for i=#itemBank, 1, -1 do
+							if itemBank[i]["itemLink"] == payload["item"]["itemLink"] then
+								table.remove(itemBank, i);			
+							end
+						end
+					else
+						payload["item"]["count"] = payload["item"]["count"] -1;
+					end
+					
+					if #itemBank > 0 then
+						currentItem = itemBank[1];
+					end
+					
+					-- TODO may have to change this to add other update also
+					self:update();
 				end
 			end
 		
@@ -769,57 +809,9 @@ function FusedCouncil:giveItem(itemIn, playername)
 	end
 	
  -- TODO set up ACK timer for response
-	self:sendGivePacket(itemIn["itemLink"], playername);
+	self:sendGivePacket(itemIn, playername);
  -- TODO save that this item was given
  
- 
- self:dbug("item count for " ..itemIn["itemLink"] .. " is".. itemIn["count"])
- -- switch to new item
-	if #givenItemBank == 0 then
-		-- tempitem does not work. need to copy and jazz
-		
-		local tempItem = self:copyItem(itemIn);
-		table.insert(givenItemBank, tempItem);
-		table.insert(tempItem["givenTo"], playername);
-	else
-	
-		for i=1, #givenItemBank do
-			local item = self:findItem(itemIn["itemLink"], givenItemBank);
-			if item then
-				item["count"] = item["count"] + 1;
-				table.insert(item["givenTo"], playername);
-			else
-				-- may need to copy item instead
-				local tempItem = self:copyItem(itemIn);
-				table.insert(givenItemBank, tempItem);
-				table.insert(tempItem["givenTo"], playername);
-			end
-		end
-	
-	
-	
-	end
-   
-	self:dbug("item count for " ..itemIn["itemLink"] .. " is".. itemIn["count"])
-	if itemIn["count"] == 1 then
-		for i=#itemBank, 1, -1 do
-			if itemBank[i]["itemLink"] == itemIn["itemLink"] then
-				table.remove(itemBank, i);			
-			end
-		end
-	else
-		itemIn["count"] = itemIn["count"] -1;
-	
-	end
-	
-	if #itemBank > 0 then
-		currentItem = itemBank[1];
-	else
-		self:clear();
-	end
-	
-	-- TODO may have to change this to add other update also
-	self:update();
  
 end
 
@@ -960,12 +952,12 @@ function FusedCouncil:sendItemBank(sendItems, sessID)
 	end, 4);
 	
 end
-function FusedCouncil:sendGivePacket(itemLink, player)
-	local payload = {cmd="give", itemLink=itemLink, player = player, sessionID = sessionID};
+function FusedCouncil:sendGivePacket(item, player)
+	local payload = {cmd="give", item=item, player = player, sessionID = sessionID};
 	local serializedPayload = FusedCouncil:Serialize(payload);
 	FusedCouncil:SendCommMessage(addonPrefix,serializedPayload,  "WHISPER", player);
 	self:dbug("sent give cmd to " .. player);
-	local tempTable = {timer = 0, count =0, itemLink= itemLink, sessionID = sessionID, player = player};
+	local tempTable = {timer = 0, count =0, item= item, sessionID = sessionID, player = player};
 	
 	tempTable["timer"] = self:ScheduleRepeatingTimer(function() 
 			tempTable["count"] = tempTable["count"] +1;
@@ -983,12 +975,12 @@ function FusedCouncil:sendGivePacket(itemLink, player)
 						self:dbug("removing timer because mismatching sess Ids");
 						table.remove(giveTimers, i);
 					else
-						if giveTimers[i]["itemLink"] == tempTable["itemLink"] and giveTimers[i]["player"] == tempTable["player"]   then
+						if giveTimers[i]["item"] == tempTable["item"] and giveTimers[i]["player"] == tempTable["player"]   then
 							table.remove(giveTimers, i);
 						end
 					end
 			  end
-			  LibDialog:Spawn("FC_Given_Toast",itemLink, playername);
+			  LibDialog:Spawn("FC_Given_Toast",item, playername);
 			end
 		  end, 2);
 	table.insert(giveTimers, tempTable);
