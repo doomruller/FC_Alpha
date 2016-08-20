@@ -112,6 +112,7 @@ function lootPopup:reciveResponseACK(payload, sender)
 		if payload["item"] == responseTimers[i]["item"] and payload["sessionID"] == responseTimers[i]["sessionID"] then
 			for k=#responseTimers[i]["sendList"], 1, -1 do
 				if responseTimers[i]["sendList"][k] == sender then
+					addon:dbug("got responce ack from " .. sender .. " removing timer");
 					self:CancelTimer(responseTimers[i]["timer"]);
 					table.remove(responseTimers[i]["sendList"], k);
 				end				

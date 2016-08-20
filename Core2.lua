@@ -96,6 +96,14 @@ end
 
 
 function FusedCouncil:OnEnable()
+	
+	local link=GetContainerItemLink(0,1);
+	printable=gsub(self:remakeItemLink(link), "\124", "\124\124");
+	ChatFrame1:AddMessage("Here's the item code for item in Bag slot 0,1: \"" .. printable .. "\"");
+
+	
+	
+	
 	-- register world events
 	self:RegisterEvent("LOOT_OPENED", function()  
 		local lootMethod, isML = GetLootMethod();
@@ -445,7 +453,7 @@ function FusedCouncil:CommHandler(prefix, message, distrubtuion, sender)
 							FusedCouncil:sendACK("response", sender, sessionID,payload["response"]["itemLink"] );
 							FusedCouncil:update();
 						else
-							self:dbug("already got this response");
+							self:dbug("already got this response dropping data");
 						end
 					end -- end council member check				
 				end -- end checking sessID within Response
@@ -478,9 +486,13 @@ function FusedCouncil:CommHandler(prefix, message, distrubtuion, sender)
 			end
 			
 			if payload["cmd"] == "give" then
+				print("recived give cmd")
 				for bag = 0,4 do
 					for slot = 1,GetContainerNumSlots(bag) do
-					  local item = GetContainerItemLink(bag,slot)
+					  local item = remakeItemLinkGetContainerItemLink(bag,slot)
+					  if item then
+						item= self:remakeItemLink(item);
+					   end
 					  if item and item == payload["itemLink"] then
 						print("recived " .. item);
 						self:sendACK("give", sender, sessionID, item);
@@ -863,7 +875,7 @@ local threshold = GetLootThreshold();
 	for i=1, GetNumLootItems() do
 		local path, name, quantity, rarity =  GetLootSlotInfo(i);
 		if rarity and  rarity >= threshold then
-			table.insert(MLItems, GetLootSlotLink(i));
+			table.insert(MLItems, self:remakeItemLink(GetLootSlotLink(i)));
 		end
 	end	
 	
@@ -1107,6 +1119,20 @@ function FusedCouncil:sort(sortFunc, isResponse)
 	end
 
 end
+function FusedCouncil:remakeItemLink(itemLink)
+	local tempLink1 = "";
+	local tempLink2 = "";
+	local count = 0;
+	local location1 = 0;
+	while count < 8 do
+		location1 = string.find(itemLink, ":",  location1 + 1)
+		count = count +1;
+	end
+	tempLink1 = string.sub(itemLink, 1,location1);
+	print(tempLink1)
+	tempLink2 = string.sub(itemLink, string.find(itemLink, ":", location1 +1),string.len(itemLink));
+	return tempLink1 .. tempLink2;
+end
 function FusedCouncil:update()
   -- main window stuff
 	self:saveToDB();
@@ -1114,8 +1140,7 @@ function FusedCouncil:update()
 		currentItem = itemBank[1];
 	 end
   
-	 if #itemBank == 0 then
-		currentItem = nil;
+	 if #itemBank == 0 and #clearTimers == 0 then
 		self:clear();
 	else 
 		mainCouncilFrame:Show();
