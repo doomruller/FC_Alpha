@@ -17,6 +17,7 @@ local voteTimers;
 local giveTimers;
 local clearTimers;
 local clearedSessionID;
+local lastItemRecived;
 
 -- Addon Settings
 local usingAddon;
@@ -77,6 +78,7 @@ function FusedCouncil:OnInitialize()
 		giveTimers = {};
 		clearTimers = {};
 		clearedSessionID = "";
+		lastItemRecived = 0;
 		
 		-- Addon Settings
 		usingAddon = false;
@@ -96,13 +98,6 @@ end
 
 
 function FusedCouncil:OnEnable()
-	
-	local link=GetContainerItemLink(0,1);
-	printable=gsub(self:remakeItemLink(link), "\124", "\124\124");
-	ChatFrame1:AddMessage("Here's the item code for item in Bag slot 0,1: \"" .. printable .. "\"");
-
-	
-	
 	
 	-- register world events
 	self:RegisterEvent("LOOT_OPENED", function()  
@@ -146,6 +141,20 @@ function FusedCouncil:OnEnable()
 		else
 			usingAddon = false;
 		end	
+	end);
+	
+	
+	self:RegisterEvent("CHAT_MSG_LOOT", function(_,msg,sender)  
+			local leng = string.find(msg, ":");
+			print( string.sub(msg,1, leng))
+			if string.sub(msg,1, leng) == "You receive loot:" then
+				local itemLink =string.sub(msg,string.find(msg, "%|.+%|r"));				
+				local _,_, _, ltype, id =string.find(itemLink, "|?c?f?f?(%x*)|?H?([^:]*):?(%d+):?");
+				local _, _, itemRarity = GetItemInfo(id);
+				if itemRarity >= GetLootThreshold() then
+					lastItemRecived = id;
+				end
+			end
 	end);
 	
 	-- register communications
@@ -381,6 +390,7 @@ function FusedCouncil:OnEnable()
 end
 
 
+
 function FusedCouncil:OnDisable()
 
 
@@ -487,20 +497,13 @@ function FusedCouncil:CommHandler(prefix, message, distrubtuion, sender)
 			
 			if payload["cmd"] == "give" then
 				print("recived give cmd")
-				for bag = 0,4 do
-					for slot = 1,GetContainerNumSlots(bag) do
-					  local item = remakeItemLinkGetContainerItemLink(bag,slot)
-					  if item then
-						item= self:remakeItemLink(item);
-					   end
-					  if item and item == payload["item"]["itemLink"] then
-						print("recived " .. item);
-						self:sendACK("give", sender, sessionID, payload["item"]);
-					  end
-					end
-				  end
+				-- might need to change this to a table b/c fast items recived
+				if self:getIdFromLink( payload["item"]["itemLink"]) == lastItemRecived then
+					self:sendACK("give", sender, sessionID, payload["item"]);
+				end
 			end
 			if payload["cmd"] == "ack" then
+				
 				if payload["type"] == "itemBank" then
 					self:dbug("recived itemBank Ack from " .. sender);
 					-- iterate back to frunt so we can remove as we go
@@ -563,8 +566,10 @@ function FusedCouncil:CommHandler(prefix, message, distrubtuion, sender)
 				if payload["type"] == "give" then
 					self:dbug("recived give ack from " .. sender);
 					for i=#giveTimers, 1 , -1 do
-						if giveTimers[i]["itemLink"] == payload["item"]["itemLink"] and giveTimers[i]["player"] == sender then
-							 self:CancelTimer(giveTimers[i]);
+						print(giveTimers[i]["item"]["itemLink"])
+						print(payload["item"]["itemLink"])
+						if self:getIdFromLink(giveTimers[i]["item"]["itemLink"]) == self:getIdFromLink(payload["item"]["itemLink"] )and giveTimers[i]["player"] == sender then
+							 self:CancelTimer(giveTimers[i]["timer"]);
 							 table.remove(giveTimers, i);
 							 print("removed give ack timer")
 						end
@@ -662,6 +667,7 @@ function FusedCouncil:clear()
 	-- Addon Settings
 	dbProfile.testing = false;
 	dbProfile.initializeFromDB = false;
+	self:GetModule("FC_LootPopup"):clear();
 			
 end
 function FusedCouncil:createItem(itemLink)
@@ -787,8 +793,12 @@ end
 function FusedCouncil:getDBProfile()
 	return dbProfile;
 end
+function FusedCouncil:getIdFromLink(itemLink)
+	local _,_, _, ltype, id =string.find(itemLink, "|?c?f?f?(%x*)|?H?([^:]*):?(%d+):?");
+	return id;
+	
+end
 function FusedCouncil:giveItem(itemIn, playername)
- self:dbug("gave " .. itemIn["itemLink"] .. " to " .. playername);
  -- TODO Actually give the item
 	-- find the item on the body
 	local itemIndex =0;
@@ -805,13 +815,10 @@ function FusedCouncil:giveItem(itemIn, playername)
 		if name and name == playername then
 			-- give the item
 			GiveMasterLoot(itemIndex, i);
+			self:dbug("gave " .. itemIn["itemLink"] .. " to " .. playername);
+			self:sendGivePacket(itemIn, playername);
 		end
 	end
-	
- -- TODO set up ACK timer for response
-	self:sendGivePacket(itemIn, playername);
- -- TODO save that this item was given
- 
  
 end
 
@@ -867,7 +874,7 @@ local threshold = GetLootThreshold();
 	for i=1, GetNumLootItems() do
 		local path, name, quantity, rarity =  GetLootSlotInfo(i);
 		if rarity and  rarity >= threshold then
-			table.insert(MLItems, self:remakeItemLink(GetLootSlotLink(i)));
+			table.insert(MLItems, GetLootSlotLink(i));
 		end
 	end	
 	
@@ -910,7 +917,7 @@ function FusedCouncil:saveToDB()
 		dbProfile.givenItemBank = givenItemBank;
 		dbProfile.itemBankRecivers = itemBankRecivers;
 		dbProfile.voteTimers = voteTimers;
-		dbProfile.giveTimers = giveTimer;
+		dbProfile.giveTimers = giveTimers;
 		dbProfile.clearTimers = clearTimers;
 		dbProfile.clearedSessionID = clearedSessionID;
 		-- Addon Settings
@@ -1110,20 +1117,6 @@ function FusedCouncil:sort(sortFunc, isResponse)
 		  end
 	end
 
-end
-function FusedCouncil:remakeItemLink(itemLink)
-	local tempLink1 = "";
-	local tempLink2 = "";
-	local count = 0;
-	local location1 = 0;
-	while count < 8 do
-		location1 = string.find(itemLink, ":",  location1 + 1)
-		count = count +1;
-	end
-	tempLink1 = string.sub(itemLink, 1,location1);
-	print(tempLink1)
-	tempLink2 = string.sub(itemLink, string.find(itemLink, ":", location1 +1),string.len(itemLink));
-	return tempLink1 .. tempLink2;
 end
 function FusedCouncil:update()
   -- main window stuff

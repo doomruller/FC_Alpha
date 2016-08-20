@@ -60,7 +60,11 @@ function lootPopup:saveToDB()
 end
 
 function lootPopup:clear()
-	responseTimers = {};
+	for i=1, 5 do
+			getglobal("FC_Popup" .. i):Hide();
+			getglobal("FC_Popup" .. i.. "NoteBox"):SetText("");
+			getglobal("FC_Popup" .. i .. "IconFrame" .."ItemCountText"):SetText("");
+		end
 	popupItems = {};
 	db.popupSaved = false;
 end
@@ -108,8 +112,10 @@ function lootPopup:populatePopup(index, item)
 end
 
 function lootPopup:reciveResponseACK(payload, sender)
+	print("responseTimers has " ..#responseTimers )
 	for i=#responseTimers, 1, -1 do
 		if payload["item"] == responseTimers[i]["item"] and payload["sessionID"] == responseTimers[i]["sessionID"] then
+			print("items and sessid match")
 			for k=#responseTimers[i]["sendList"], 1, -1 do
 				if responseTimers[i]["sendList"][k] == sender then
 					addon:dbug("got responce ack from " .. sender .. " removing timer");
@@ -123,6 +129,7 @@ function lootPopup:reciveResponseACK(payload, sender)
 end
 
 function lootPopup:sendResponse(response)
+	print("sending response")
 	local payload = {cmd="response", response= response, sessionID = addon:getSessionID()};
 	local serializedPayload = lootPopup:Serialize(payload);
 	lootPopup:SendCommMessage(addon:getPrefix(),serializedPayload, "RAID");
@@ -141,6 +148,7 @@ function lootPopup:sendResponse(response)
 					end
 			end
 			if tempTable["count"] == 4 then
+			self:dbug("timer timed out");
 			  self:CancelTimer(tempTable["timer"]);
 			  for i=#responseTimers,1 ,-1 do
 					if addon:getSessionID() ~= responseTimers[i]["sessionID"] then
@@ -159,6 +167,7 @@ function lootPopup:sendResponse(response)
 		  
 		  end, 2);
 	table.insert(responseTimers, tempTable);
+	print("number of response timers is now " .. #responseTimers)
 end
 
 
