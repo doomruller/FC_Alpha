@@ -102,8 +102,8 @@ function lootPopup:populatePopup(index, item)
 			
 			
 			local response = lootPopup:createResponse(item, button:GetText(), getglobal("FC_Popup" .. index .. "NoteBox"):GetText());
-			
-			lootPopup:sendResponse(response);
+			local responsePL = {response = response, sessionID =addon:getSessionID()};
+			addon:sendTCP("response",responsePL, "RAID",addon:getOptions()["lootCouncilMembers"],addon:getSessionID(), response["itemLink"]);
 			lootPopup:update();
 		end);
 		
@@ -148,7 +148,7 @@ function lootPopup:sendResponse(response)
 					end
 			end
 			if tempTable["count"] == 4 then
-			self:dbug("timer timed out");
+			addon:dbug("timer timed out");
 			  self:CancelTimer(tempTable["timer"]);
 			  for i=#responseTimers,1 ,-1 do
 					if addon:getSessionID() ~= responseTimers[i]["sessionID"] then
@@ -156,6 +156,7 @@ function lootPopup:sendResponse(response)
 						table.remove(responseTimers, i);
 					else
 						if responseTimers[i]["item"] == tempTable["item"] then
+							addon:dbug("removed timer because of time out");
 							table.remove(responseTimers, i);
 						end
 					end
