@@ -24,6 +24,7 @@ local mainCouncilFrame;
 
 -- Addon Settings
 local usingAddon;
+local version = "7.0.3-v.91";
 local dbProfile;
 local addonPrefix = "FCPREFIX";
 local dbDefaults = {
@@ -175,6 +176,12 @@ function FusedCouncil:OnEnable()
 			end
 			if args[1] == "clear" then
 				self:clear();
+			end
+			if args[1] == "vcheck" then
+				print("FusedCouncil version :"..version);
+				if args[2] == "raid" then
+					-- sendTCP
+				end
 			end
 		else
 			print("No cmd was entered");
@@ -370,7 +377,15 @@ end
 function FusedCouncil:clear()
 	mainCouncilFrame:Hide();
 	if self:isML() then
-		--self:sendClear();
+		local raidMembers = {};
+		for k=1, GetNumGroupMembers() do
+			local name, _, _,_,_,_,_,online = GetRaidRosterInfo(k);
+			if online then							
+				table.insert(raidMembers, name);
+			end
+		end
+		local clearPL = {sessionID = sessID};
+		self:sendTCP("clear",clearPL,"RAID",raidMembers,sessID);
 	end
 	
 	-- prev session vars
@@ -443,6 +458,57 @@ function FusedCouncil:CommHandler(prefix, message, distrubtuion, sender)
 				end
 			end
 			
+			if payload["cmd"] == "vote" then
+				if sessID == payload["sessionID"] and self:isCouncilMember() then 
+					local item = self:findItem(payload["contents"]["item"]["itemLink"], itemBank);
+					local response = self:findResponse(item, payload["contents"]["to"]);
+					if not self:hasVoteFrom(item,sender) then
+						table.insert(response["votes"], sender);
+					end					
+					self:sendACK("vote",sender, sessID, payload["contents"]["item"]["itemLink"]);
+					self:update();
+				end
+			
+			end
+			
+			if payload["cmd"] == "unvote" then
+				if sessID == payload["sessionID"] and self:isCouncilMember() then 
+					local item = self:findItem(payload["contents"]["item"]["itemLink"], itemBank);
+					local response = self:findResponse(item, payload["contents"]["to"]);
+					for i=#response["votes"], 1, -1 do
+						if response["votes"][i] == sender then
+							table.remove(response["votes"], i);
+						end
+					end
+					self:sendACK("unvote",sender, sessID, payload["contents"]["item"]["itemLink"]);
+					self:update();
+				end
+			end
+			
+			if payload["cmd"] == "give" then
+				if self:getIdFromLink( payload["contents"]["item"]["itemLink"]) == lastItemRecived then
+					self:sendACK("give", sender, sessID, payload["contents"]["item"]["itemLink"]);
+				end
+			end			
+			
+			if payload["cmd"] == "clear" then
+				self:sendACK("clear",sender, sessID);
+				if not self:isML() then
+					local localSessNum, localSessName = string.find(payload["contents"]["sessionID"], "?(%d+)?(%a+)");
+					local sessNum, sessName = string.find(sessID, "?(%d+)?(%a+)");
+					if localSessName == sessName and localSessNum > sessNum then
+						-- we are getting old clear from prev session ignore it						
+					else
+						self:clear();
+					end
+					
+				end
+				
+			end
+			
+			if payload["cmd"] == "vcheck" then
+				--TODO
+			end
 			
 			if payload["cmd"] == "ack" then
 				-- {cmd="ack", type=type, sessionID=sessionID, identifer = identifer}
@@ -623,11 +689,49 @@ end
 function FusedCouncil:getSessionID()
 	return sessID;
 end
+function FusedCouncil:getIdFromLink(itemLink)
+	local _,_, _, ltype, id =string.find(itemLink, "|?c?f?f?(%x*)|?H?([^:]*):?(%d+):?");
+	return id;
+	
+end
+function FusedCouncil:giveItem(itemIn, playername)
+ -- TODO Actually give the item
+	-- find the item on the body
+	local itemIndex =0;
+	for i=1, GetNumLootItems() do
+		local itemLink = GetLootSlotLink(i);
+		if itemLink == itemIn["itemLink"] then
+			itemIndex = i;
+		end		
+	end
+	-- find the player
+	for i=1, GetNumGroupMembers() do
+		
+		local name = select(1, GetMasterLootCandidate(itemIndex,i));
+		if name and name == playername then
+			-- give the item
+			GiveMasterLoot(itemIndex, i);
+			local givePL = {item= itemIn};
+			self:sendTCP("give", givePL, "WHISPER", {playername}, sessID,itemIn["itemLink"]);
+		end
+	end
+ 
+end
+
 
 -------
 -- H --
 -------
-
+function FusedCouncil:hasVoteFrom(item, player)
+  for i=1, #item["responses"] do
+    for k=1, #item["responses"][i]["votes"] do
+      if item["responses"][i]["votes"][k] == player then
+        return true;
+      end
+    end
+  end
+  return false;
+end
 -------
 -- I --
 -------
@@ -948,14 +1052,14 @@ function FusedCouncil:updateEntrys()
     end
 
     getglobal("FC_entry" .. i .. "VoteButton"):SetScript("OnClick", function(self)
-	FusedCouncil:dbug("vote button pressed");
 	if self:GetText() == "Vote" then
-			if not FusedCouncil:hasVoteFrom(currentItem, UnitName("player")) then
-			FusedCouncil:dbug("sending vote")
-			  FusedCouncil:sendVote("vote", i);
-			end
+		if not FusedCouncil:hasVoteFrom(currentItem, UnitName("player")) then
+			local votePL = {item = currentItem, to = currentItem["responses"][i]["player"]["name"]};
+			self:sendTCP("vote", votePL, "RAID", sessOptions["lootCouncilMembers"], sessID, currentItem["itemLink"]);
+		end
       else
-        FusedCouncil:sendVote("unvote",i);
+		local votePL = {item = currentItem, to = currentItem["responses"][i]["player"]["name"]};
+		self:sendTCP("unvote", votePL, "RAID", sessOptions["lootCouncilMembers"], sessID, currentItem["itemLink"]);
       end
 
 
