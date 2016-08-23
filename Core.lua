@@ -1,29 +1,31 @@
 FusedCouncil = LibStub("AceAddon-3.0"):NewAddon("FusedCouncil","AceConsole-3.0", "AceEvent-3.0", "AceComm-3.0", "AceSerializer-3.0", "AceHook-3.0", "AceTimer-3.0");
 local LibDialog = LibStub("LibDialog-1.0");
 
--- Session var
-local lootedSessUnit;
-local sessionID;
-local ML;
 
--- session item var
+-- current session vars
+local sessID;
+local sessIDML;
+local ML;
+local lootedSessUnit;
+local sessOptions;
+local timers;
+
+-- current session item vars
 local currentItem;
 local itemBank;
 local givenItemBank;
-local sessOptions;
-local itemBankTimer;
-local itemBankRecivers;
-local voteTimers;
-local giveTimers;
-local clearTimers;
-local clearedSessionID;
+
+-- prev session vars
+local lastSessID;
 local lastItemRecived;
+
+-- UI components
+local mainCouncilFrame;
 
 -- Addon Settings
 local usingAddon;
-local dbug;
+local version = "7.0.3-v.91";
 local dbProfile;
-local testing;
 local addonPrefix = "FCPREFIX";
 local dbDefaults = {
 
@@ -32,27 +34,11 @@ local dbDefaults = {
 			numOfResponseButtons = 7,
 			responseButtonNames = {"Bis", "Major","Minor", "Reroll", "OffSpec", "Transmog", "Pass"},
 			lootCouncilMembers = {UnitName("player")},
-		  },
-		lootedSessUnit = "asd",
-		sessionID = "",
-		ML = "",
-		currentItem = nil,
-		itemBank = {},
-		givenItemBank = {},
-		itemBankRecivers = {},
-		voteTimers = {},
-		usingAddon = false,
-		testing = false,
-		dbug = true,
-		initializeFromDB = false,
-		popupSaved = false,
-		
+		  },		
+		  initializeFromDB = false;
     },
 
 };
-
---UI components
-local mainCouncilFrame;
 
 
 function FusedCouncil:OnInitialize()
@@ -60,44 +46,21 @@ function FusedCouncil:OnInitialize()
 	self.db = LibStub("AceDB-3.0"):New("FusedCouncilDB",dbDefaults, true);
 	self.db:RegisterDefaults(dbDefaults);
 	dbProfile = self.db.profile;
+	
 	-- UI components
 	mainCouncilFrame = FusedCouncil:createMainCouncilFrame();
 	
+	timers = {};
 	-- initialize all veriables.
-	
-		lootedSessUnit = "";
-		sessionID = "";
-		ML = "";
-		
-		-- session item var
-		currentItem = nil;
-		itemBank = {};
-		sessOptions={};
-		self:dbug("sessopt changed in initialize")
-		givenItemBank = {};
-		itemBankRecivers = {};
-		voteTimers = {};
-		giveTimers = {};
-		clearTimers = {};
-		clearedSessionID = "";
-		lastItemRecived = 0;
-		
-		-- Addon Settings
-		usingAddon = false;
-		testing = false;
-		dbug = true;
-		
 	if dbProfile.initializeFromDB then
 		self:loadFromDB();
 		mainCouncilFrame:Show();
 		self:update();
+	else
+		self:initializeVars();
 	end
 	
-	
-	
-	
 end
-
 
 function FusedCouncil:OnEnable()
 	
@@ -106,21 +69,23 @@ function FusedCouncil:OnEnable()
 		local lootMethod, isML = GetLootMethod();
 		local lootedUnit = UnitName("target");
 		
-		if lootMethod =="master" and isML == 0 and usingAddon then
-			if sessionID ~= "" then
-				-- if we do not have a fresh sessionID
+		if lootMethod =="master" and self:isML() and usingAddon then
+			if sessIDML ~= "" then
+				-- if we do not have a fresh sessIDML
 				if lootedUnit ~= lootedSessUnit then
 					-- we have a new body being looted
-					FusedCouncil:prossessLootedBody(sessionID);					
+					
+					-- check if itemLinks are =?
+					FusedCouncil:prossessLootedBody(sessIDML);					
 				else
 					-- we don't have a new body being looted				
 				end			
 			else
-				-- we have a fresh sessionID
+				-- we have a fresh sessIDML
 				lootedSessUnit = lootedUnit;
 				ML = UnitName("player");
-				sessionID = tostring(math.floor(GetTime())) .. UnitName("player");				
-				FusedCouncil:prossessLootedBody(sessionID);
+				sessIDML = tostring(math.floor(GetTime())) .. UnitName("player");				
+				FusedCouncil:prossessLootedBody(sessIDML);
 		
 			end
 		
@@ -140,15 +105,12 @@ function FusedCouncil:OnEnable()
 		if GetLootMethod() == "master" and self:isML()  then
 			--toast to see if using addon
 			LibDialog:Spawn("FC_CONFIRM_USAGE");
-		else
-			usingAddon = false;
 		end	
 	end);
 	
 	
 	self:RegisterEvent("CHAT_MSG_LOOT", function(_,msg,sender)  
 			local leng = string.find(msg, ":");
-			print( string.sub(msg,1, leng))
 			if string.sub(msg,1, leng) == "You receive loot:" then
 				local itemLink =string.sub(msg,string.find(msg, "%|.+%|r"));				
 				local _,_, _, ltype, id =string.find(itemLink, "|?c?f?f?(%x*)|?H?([^:]*):?(%d+):?");
@@ -184,7 +146,7 @@ function FusedCouncil:OnEnable()
 	});
 	
 	LibDialog:Register("FC_Given_Toast", {
-		text = "Fused Council \n\n Item: could not be given to " ,
+		text = "Fused Council \n\n Item: could not be given to "  ,
 		buttons = {
 			{	text = "OK",
 				on_click = function()
@@ -215,6 +177,12 @@ function FusedCouncil:OnEnable()
 			end
 			if args[1] == "clear" then
 				self:clear();
+			end
+			if args[1] == "vcheck" then
+				print("FusedCouncil version :"..version);
+				if args[2] == "raid" then
+					-- sendTCP
+				end
 			end
 		else
 			print("No cmd was entered");
@@ -392,18 +360,45 @@ function FusedCouncil:OnEnable()
 end
 
 
-
-function FusedCouncil:OnDisable()
-
-
-end
-
 --------------------------------------------------------------------
 -------------             MY Functions  		-------------------
 --------------------------------------------------------------------
 
+-------
+-- A --
+-------
 
+-------
+-- B --
+-------
 
+-------
+-- C --
+-------
+function FusedCouncil:clear()
+	mainCouncilFrame:Hide();
+	if self:isML() then
+		local raidMembers = {};
+		for k=1, GetNumGroupMembers() do
+			local name, _, _,_,_,_,_,online = GetRaidRosterInfo(k);
+			if online and name ~= UnitName("player") then							
+				table.insert(raidMembers, name);
+			end
+		end
+		local clearPL = {sessionID = sessID};
+		
+		self:sendTCP("clear",clearPL,"RAID",raidMembers,sessID);
+	end
+	
+	-- prev session vars
+	lastSessID = sessID;
+	
+	-- reset all other Vars
+	self:initializeVars();	
+	
+	dbProfile.initializeFromDB = false;
+	self:GetModule("FC_LootPopup"):clear();			
+end
 function FusedCouncil:copyItem(orig)
  local orig_type = type(orig)
     local copy
@@ -422,259 +417,192 @@ function FusedCouncil:copyItem(orig)
     return copy
 
 end
+
 function FusedCouncil:CommHandler(prefix, message, distrubtuion, sender)
 	if prefix == addonPrefix then
 		local success, payload = self:Deserialize(message);
 		
 		if success then
 			if payload["cmd"] == "itemBank" then
-				self:dbug("recived itemBank. sessionID is ".. payload["sessionID"]);
-				self:sendACK("itemBank", sender, payload["sessionID"]);
-				if sessionID == "" or (self:isML() and sessionID == payload["sessionID"]) then
+				--{itemBank = sendItems, sessionID = sessID, ML = ML, options = dbProfile.options}
+				
+				if sessID == ""  then
+					self:sendACK("itemBank", sender, payload["contents"]["sessionID"]);
 					dbProfile.initializeFromDB = true;
-					self:dbug("new local Session")
-					sessionID = payload["sessionID"];
-					testing = payload["testing"];
-					ML = payload["ML"];					
-					FusedCouncil:sendACK("itemBank", sender, sessionID);
-					sessOptions = payload["options"];
-					self:dbug("sessopts changed in itembank cmd")
-					self:GetModule("FC_LootPopup"):addPopupItems(payload["itemBank"]);
-					
+					sessID = payload["contents"]["sessionID"];
+					ML = payload["contents"]["ML"];
+					sessOptions = payload["contents"]["options"];
+					self:GetModule("FC_LootPopup"):addPopupItems(payload["contents"]["itemBank"]);
 					if FusedCouncil:isCouncilMember() and not self:isML() then
-						self:dbug("you are on council")
 						mainCouncilFrame:Show();
-						itemBank = payload["itemBank"];
+						itemBank = payload["contents"]["itemBank"];
 						FusedCouncil:update();
-					else
-					self:dbug("you are not on council")
 					end
-				elseif payload["sessionID"] ~= sessionID then
+				elseif payload["sessionID"] == sessID then
+					-- added more loot
+				elseif payload["sessionID"] ~= sessID then
 					-- new session has started and prev session wasn't cleared
-				end -- end checking sessID within ITEMBANK
-				
-			end
-			if payload["cmd"] == "response" then
-				
-				if sessionID == payload["sessionID"] then
-					if self:isCouncilMember() then
-						
-						if not self:findResponse(self:findItem(payload["response"]["itemLink"], itemBank), sender) then
-							self:dbug("recived response from " .. sender .. " about " .. payload["response"]["itemLink"]);
-							local item = self:findItem(payload["response"]["itemLink"], itemBank);
-							table.insert(item["responses"], payload["response"]);
-							FusedCouncil:sendACK("response", sender, sessionID,payload["response"]["itemLink"] );
-							FusedCouncil:update();
-						else
-							self:dbug("already got this response dropping data");
-						end
-					end -- end council member check				
-				end -- end checking sessID within Response
-			end
-			if payload["cmd"] == "vote" then
-				self:dbug("recived vote cmd")
-				if sessionID == payload["sessionID"] then
-					self:dbug("vote cmd session ids matched")
-					if self:isCouncilMember() then
-						self:dbug("recived vote from " .. sender .. " for " .. payload["vote"]["item"]["itemLink"]);
-						local response = self:findResponse(self:findItem(payload["vote"]["item"]["itemLink"], itemBank), payload["vote"]["to"]);
-						table.insert(response["votes"], payload["vote"]["from"]);
-						FusedCouncil:sendACK("vote", sender, sessionID,payload["vote"]["itemLink"] );
-						FusedCouncil:update();
-					end-- end council member check				
-				end -- end checking sessID within vote			
-			end
-			if payload["cmd"] == "unvote" then
-				if sessionID == payload["sessionID"] then
-						if self:isCouncilMember() then
-							self:dbug("recived unvote from " .. sender .. " for " .. payload["vote"]["item"]["itemLink"]);
-							local response = self:findResponse(self:findItem(payload["vote"]["item"]["itemLink"], itemBank), payload["vote"]["to"]);
-							for i=#response["votes"], 1, -1 do
-								if response["votes"][i] == payload["vote"]["from"] then
-									table.remove(response["votes"], i);
-								end
-							end
-							FusedCouncil:sendACK("unvote", sender, sessionID,payload["vote"]["itemLink"] );
-							FusedCouncil:update();
-						end-- end council member check				
-				end -- end checking sessID within unvote	
+				end
 			end
 			
-			if payload["cmd"] == "give" then
-				print("recived give cmd")
-				-- might need to change this to a table b/c fast items recived
-				if self:getIdFromLink( payload["item"]["itemLink"]) == lastItemRecived then
-					self:sendACK("give", sender, sessionID, payload["item"]);
+			if payload["cmd"] == "response" then
+				self:dbug(sessID .. " recived response cmd " ..  payload["contents"]["sessionID"]);
+				if sessID == payload["contents"]["sessionID"] and self:isCouncilMember() then
+					local item = self:findItem(payload["contents"]["response"]["itemLink"], itemBank);
+					if not self:findResponse(item, sender) then
+							self:dbug("recived response from " .. sender .. " about " .. payload["contents"]["response"]["itemLink"]);
+							table.insert(item["responses"], payload["contents"]["response"]);
+							FusedCouncil:sendACK("response", sender, sessID,payload["contents"]["response"]["itemLink"] );
+							FusedCouncil:update();
+					else
+						self:dbug("already got this response dropping data");
+					end
 				end
 			end
-			if payload["cmd"] == "ack" then
-				
-				if payload["type"] == "itemBank" then
-					self:dbug("recived itemBank Ack from " .. sender);
-					-- iterate back to frunt so we can remove as we go
-					for i=#itemBankRecivers, 1, -1 do
-						if itemBankRecivers[i] == sender then
-							self:dbug("removed " .. sender)
-							table.remove(itemBankRecivers, i);
-						end
-					end
-					if #itemBankRecivers == 0 then
-						self:dbug("no itemBankRecivers remain canceling timer");
-						self:CancelTimer(itemBankTimer);
+			
+			if payload["cmd"] == "vote" then
+			print(sessID .. " " ..  payload["contents"]["sessionID"])
+				if sessID == payload["contents"]["sessionID"] and self:isCouncilMember() then 
+					local item = self:findItem(payload["contents"]["item"]["itemLink"], itemBank);
+					local response = self:findResponse(item, payload["contents"]["to"]);
+					if not self:hasVoteFrom(item,sender) then
+						table.insert(response["votes"], sender);
 					end					
+					self:sendACK("vote",sender, sessID, payload["contents"]["item"]["itemLink"]);
+					self:update();
 				end
-				if payload["type"] == "response" then
-					self:dbug("recived Response ack from " .. sender .. " for " .. payload["item"]);
-					self:GetModule("FC_LootPopup"):reciveResponseACK(payload, sender);
-				end
-				if payload["type"] == "vote" then
-					self:dbug("got vote ack from " .. sender);
-					for i=#voteTimers, 1, -1 do
-						if payload["item"] == voteTimers[i]["item"] and payload["sessionID"] == voteTimers[i]["sessionID"] and payload["type"] == voteTimers[i]["vote"] then
-							for k=#voteTimers[i]["sendList"], 1, -1 do
-								if voteTimers[i]["sendList"][k] == sender then
-									self:dbug("removing vote timer b/c ack from ".. sender)
-									table.remove(voteTimers[i]["sendList"], k);
-								end				
-							end
+			
+			end
+			
+			if payload["cmd"] == "unvote" then
+				print("got unvote cmd sessid: " .. sessID .. " and payload is :".. payload["contents"]["sessionID"])
+				if sessID == payload["contents"]["sessionID"] and self:isCouncilMember() then 
+					print("made it inside of unvote")
+					local item = self:findItem(payload["contents"]["item"]["itemLink"], itemBank);
+					local response = self:findResponse(item, payload["contents"]["to"]);
+					for i=#response["votes"], 1, -1 do
+						if response["votes"][i] == sender then
+							table.remove(response["votes"], i);
 						end
 					end
-				end
-				if payload["type"] == "unvote" then
-					self:dbug("got unvote ack from " .. sender);
-					for i=#voteTimers, 1, -1 do
-						if payload["item"] == voteTimers[i]["item"] and payload["sessionID"] == voteTimers[i]["sessionID"] and payload["type"] == voteTimers[i]["vote"] then
-							for k=#voteTimers[i]["sendList"], 1, -1 do
-								if voteTimers[i]["sendList"][k] == sender then
-									self:dbug("removing unvote timer b/c ack from ".. sender)
-									table.remove(voteTimers[i]["sendList"], k);
-								end				
-							end
-						end
-					end				
-				end
-				if payload["type"] == "clear" then
-					self:dbug("recived clear ack from " .. sender);
-					for i=#clearTimers, 1 , -1 do
-						for k=#clearTimers[i]["sendList"], 1, -1 do
-							if  clearTimers[i]["sendList"][k] == sender then
-								table.remove(clearTimers[i]["sendList"],k);
-							end
-							if  #clearTimers[i]["sendList"] == 0 then
-								self:CancelTimer(clearTimers[i]["timer"]);
-								table.remove(clearTimers, i );
-							end
-						end
-						
-					end
-				end
-				if payload["type"] == "give" then
-					self:dbug("recived give ack from " .. sender);
-					for i=#giveTimers, 1 , -1 do
-						print(giveTimers[i]["item"]["itemLink"])
-						print(payload["item"]["itemLink"])
-						if self:getIdFromLink(giveTimers[i]["item"]["itemLink"]) == self:getIdFromLink(payload["item"]["itemLink"] )and giveTimers[i]["player"] == sender then
-							 self:CancelTimer(giveTimers[i]["timer"]);
-							 table.remove(giveTimers, i);
-							 print("removed give ack timer")
-						end
-					end
-					
-					-- switch to new item
-					if #givenItemBank == 0 then		
-						local tempItem = self:copyItem(payload["item"]);
-						table.insert(givenItemBank, tempItem);
-						table.insert(tempItem["givenTo"], playername);
-					else
-					
-						for i=1, #givenItemBank do
-							local item = self:findItem(payload["item"]["itemLink"], givenItemBank);
-							if item then
-								item["count"] = item["count"] + 1;
-								table.insert(item["givenTo"], playername);
-							else
-								-- may need to copy item instead
-								local tempItem = self:copyItem(payload["item"]);
-								table.insert(givenItemBank, tempItem);
-								table.insert(tempItem["givenTo"], playername);
-							end
-						end
-					
-					
-					
-					end
-					if payload["item"]["count"] == 1 then
-						for i=#itemBank, 1, -1 do
-							if itemBank[i]["itemLink"] == payload["item"]["itemLink"] then
-								table.remove(itemBank, i);			
-							end
-						end
-					else
-						payload["item"]["count"] = payload["item"]["count"] -1;
-					end
-					
-					if #itemBank > 0 then
-						currentItem = itemBank[1];
-					end
-					
-					-- TODO may have to change this to add other update also
+					self:sendACK("unvote",sender, sessID, payload["contents"]["item"]["itemLink"]);
 					self:update();
 				end
 			end
-		
-			if payload["cmd"] == "clear" then
-				self:sendACK("clear", sender, sessionID);
-				self:clear();
-			end
-		end -- end if deserialize success
-	
-	end -- end if prefix matches
-	
-
-end
-
-function FusedCouncil:clear()
-	mainCouncilFrame:Hide();
-	if self:isML() then
-		self:sendClear();
-	end
-	clearedSessionID = sessionID;
-	-- Session var
-	lootedSessUnit = "";
-	sessionID = "";
-	ML = "";
-	testing = false;
-	
-	-- session item var
-	currentItem = nil;
-	itemBank = {};
-	givenItemBank = {};
-	itemBankRecivers = {};
-	for i=#voteTimers, 1, -1 do
-		self:CancelTimer(voteTimers["timer"]);
-		table.remove(voteTimers, i);
-	end
-	for i=#giveTimers, 1, -1 do
-		self:CancelTimer(giveTimers["timer"]);
-		table.remove(giveTimers, i);
-	end
-	-- Session var
-	dbProfile.lootedSessUnit = "";
-	dbProfile.sessionID = "";
-	dbProfile.ML = "";
-	-- session item var
-	dbProfile.currentItem = nil;
-	dbProfile.itemBank = {};
-	dbProfile.givenItemBank = {};
-	dbProfile.itemBankRecivers = {};
-	dbProfile.voteTimers = {};
-	dbProfile.giveTimers = {};
-	-- Addon Settings
-	dbProfile.testing = false;
-	dbProfile.initializeFromDB = false;
-	self:GetModule("FC_LootPopup"):clear();
 			
+			if payload["cmd"] == "give" then
+				if self:getIdFromLink( payload["contents"]["item"]["itemLink"]) == lastItemRecived then
+					self:sendACK("give", sender, sessID, payload["contents"]["item"]["itemLink"]);
+				end
+			end			
+			
+			if payload["cmd"] == "clear" then
+				
+				if not self:isML() then
+					self:sendACK("clear",sender, sessID);
+					local localSessNum, localSessName = string.find(payload["contents"]["sessionID"], "?(%d+)?(%a+)");
+					local sessNum, sessName = string.find(sessID, "?(%d+)?(%a+)");
+					if localSessName == sessName and localSessNum > sessNum then
+						-- we are getting old clear from prev session ignore it						
+					else
+						self:clear();
+					end
+					
+				end
+				
+			end
+			
+			if payload["cmd"] == "vcheck" then
+				--TODO
+			end
+			
+			if payload["cmd"] == "ack" then
+				-- {cmd="ack", type=type, sessionID=sessionID, identifer = identifer}
+				print("recived ack " ..payload["type"] .." for sess " ..  payload["sessionID"])
+				 for i=#timers,1 ,-1 do
+					if payload["sessionID"] == timers[i]["sessionID"] and   timers[i]["cmd"] == payload["type"]  then
+						if payload["identifer"] then
+							if timers[i]["identifer"] and timers[i]["identifer"] == payload["identifer"]then
+								-- found right timer
+								for k=#timers[i]["sendList"], 1, -1 do
+									if timers[i]["sendList"][k] == sender then
+										table.remove(timers[i]["sendList"], k );
+										self:dbug("recived " .. payload["type"] .. sender );
+									end
+								end
+							
+							end
+						else
+							-- found right timer
+							for k=#timers[i]["sendList"], 1, -1 do
+								if timers[i]["sendList"][k] == sender then
+									table.remove(timers[i]["sendList"], k );
+									self:dbug("recived " .. payload["type"] .." ack from ".. sender );
+								end
+							end
+						end
+						
+						
+					end
+					if #timers[i]["sendList"] == 0 then
+						self:CancelTimer(timers[i]["timer"]);
+						self:dbug("recived all " .. payload["type"] .. " acks. timer canceled" );
+						if timers[i]["cmd"] == "give" then
+							-- switch to new item
+							local itemInBank = self:findItem(payload["identifer"],itemBank);
+							if #givenItemBank == 0 then		
+								local tempItem = self:copyItem(itemInBank);
+								table.insert(givenItemBank, tempItem);
+								table.insert(tempItem["givenTo"], playername);
+							else
+							
+								for i=1, #givenItemBank do
+									local item = self:findItem(payload["identifer"], givenItemBank);
+									if item then
+										item["count"] = item["count"] + 1;
+										table.insert(item["givenTo"], playername);
+									else
+										-- may need to copy item instead
+										local tempItem = self:copyItem(itemInBank);
+										table.insert(givenItemBank, tempItem);
+										table.insert(tempItem["givenTo"], playername);
+									end
+								end
+							
+							
+							
+							end
+							if itemInBank["count"] == 1 then
+								for i=#itemBank, 1, -1 do
+									if itemBank[i]["itemLink"] == payload["identifer"] then
+										table.remove(itemBank, i);			
+									end
+								end
+							else
+								itemInBank["count"] = itemInBank["count"] -1;
+							end
+							
+							if #itemBank > 0 then
+								currentItem = itemBank[1];
+								self:update();
+							else 
+								self:clear();
+							end
+						end
+						table.remove(timers, i);
+					end
+					
+				end
+			
+			end
+			
+			
+			
+			
+		end-- end success
+	end
 end
+
 function FusedCouncil:createItem(itemLink)
 	local itemName, _ , _, itemLevel, _, itemType, itemSubType, _, itemEquipLoc, itemTexture = GetItemInfo(itemLink);
 	local item = {
@@ -765,12 +693,20 @@ function FusedCouncil:createMainCouncilFrame()
 	return tempMain
 end
 
+-------
+-- D --
+-------
 function FusedCouncil:dbug(msg)
-	if dbug then 
 		print(msg);
-	end
 
 end
+-------
+-- E --
+-------
+
+-------
+-- F --
+-------
 function FusedCouncil:findItem(itemLink, itemTable)
 	for i=1, #itemTable do
 		if itemTable[i]["itemLink"] == itemLink then
@@ -787,17 +723,19 @@ function FusedCouncil:findResponse(item, name)
 	end
 	return nil;
 end
-function FusedCouncil:getOptions()
-	return sessOptions;
-end
-function FusedCouncil:getSessionID()
-	return sessionID;
-end
-function FusedCouncil:getPrefix()
-	return addonPrefix;
-end
+
+-------
+-- G --
+-------
 function FusedCouncil:getDBProfile()
 	return dbProfile;
+end
+function FusedCouncil:getOptions()
+	-- have to return copy of options table and idk why
+	return self:copyItem(sessOptions);
+end
+function FusedCouncil:getSessionID()
+	return sessID;
 end
 function FusedCouncil:getIdFromLink(itemLink)
 	local _,_, _, ltype, id =string.find(itemLink, "|?c?f?f?(%x*)|?H?([^:]*):?(%d+):?");
@@ -821,13 +759,17 @@ function FusedCouncil:giveItem(itemIn, playername)
 		if name and name == playername then
 			-- give the item
 			GiveMasterLoot(itemIndex, i);
-			self:dbug("gave " .. itemIn["itemLink"] .. " to " .. playername);
-			self:sendGivePacket(itemIn, playername);
+			local givePL = {item= itemIn};
+			self:sendTCP("give", givePL, "WHISPER", {playername}, sessID,itemIn["itemLink"]);
 		end
 	end
  
 end
 
+
+-------
+-- H --
+-------
 function FusedCouncil:hasVoteFrom(item, player)
   for i=1, #item["responses"] do
     for k=1, #item["responses"][i]["votes"] do
@@ -838,53 +780,107 @@ function FusedCouncil:hasVoteFrom(item, player)
   end
   return false;
 end
+-------
+-- I --
+-------
+function FusedCouncil:initializeVars()
+	-- current session vars
+	sessID = "";
+	sessIDML = "";
+	ML = "";
+	lootedSessUnit = "";
+	sessOptions = {};
+
+	-- current session item vars
+	currentItem = nil;
+	itemBank = {};
+	givenItemBank = {};
+	
+	
+	
+	-- current session vars
+	dbProfile.sessID = "";
+	dbProfile.sessIDML = "";
+	dbProfile.ML = "";
+	dbProfile.lootedSessUnit = "";
+	dbProfile.sessOptions = {};
+	dbProfile.timers = {};
+
+	-- current session item vars
+	dbProfile.currentItem = nil;
+	dbProfile.itemBank = {};
+	dbProfile.givenItemBank = {};
+	
+end
 function FusedCouncil:isCouncilMember()
 	if sessOptions then
-		for i=1, #sessOptions["lootCouncilMembers"] do			
+		for i=1, #sessOptions["lootCouncilMembers"] do	
 			if UnitName("player") == sessOptions["lootCouncilMembers"][i] then
 				return true;
 			end
 		end
-		if #sessOptions["lootCouncilMembers"] == 0 then
-			self:dbug("num of council members is 0");
-		end
-		self:dbug("player not found as council memeber")
 		return false;
 	else
-		self:dbug("in isCouncilMember sessOptions was nil");
 		return false;
 	end
 end
+
 function FusedCouncil:isML()
-	return ML == UnitName("player");
+	local _, isML = GetLootMethod();
+	return isML ==0;
 end
+
+-------
+-- J --
+-------
+
+-------
+-- K --
+-------
+
+-------
+-- L --
+-------
 function FusedCouncil:loadFromDB()
-		lootedSessUnit = dbProfile.lootedSessUnit;
-		sessionID = dbProfile.sessionID;
-		ML = dbProfile.ML;
-		
-		-- session item var
-		currentItem = dbProfile.currentItem;
-		itemBank = dbProfile.itemBank;
-		sessOptions = dbProfile.sessOptions;
-		self:dbug("sessopts loaded from DB")
-		givenItemBank = dbProfile.givenItemBank;
-		itemBankRecivers = dbProfile.itemBankRecivers;
-		voteTimers = dbProfile.voteTimers;
-		giveTimers = dbProfile.giveTimers;
-		clearedSessionID = dbProfile.clearedSessionID;
-		clearTimers = dbProfile.clearTimers;
-		-- Addon Settings
-		usingAddon = dbProfile.usingAddon;
-		testing = dbProfile.testing;
-		dbug = dbProfile.dbug;
-		
+	-- current session vars
+	sessID = dbProfile.sessID;
+	ML = dbProfile.ML;
+	lootedSessUnit = dbProfile.lootedSessUnit;
+	sessOptions = dbProfile.sessOptions;
+	timers = dbProfile.timers;
+	
+	-- current session item vars
+	currentItem = dbProfile.currentItem;
+	itemBank = dbProfile.itemBank;
+	givenItemBank = dbProfile.givenItemBank;
+
+	-- prev session vars
+	lastSessID = dbProfile.lastSessID;
+	lastItemRecived = dbProfile.lastItemRecived;
+
+	-- Addon Settings
+	usingAddon = dbProfile.usingAddon;		
 end
-function FusedCouncil:prossessLootedBody(sessID)
-local MLItems = {};
-local sendItems = {};
-local threshold = GetLootThreshold();
--- do we have any items that need to be MLed?
+-------
+-- M --
+-------
+
+-------
+-- N --
+-------
+
+-------
+-- O --
+-------
+
+-------
+-- P --
+-------
+function FusedCouncil:prossessLootedBody(sessIDML)
+	local MLItems = {};
+	local sendItems = {};
+	local threshold = GetLootThreshold();
+	-- do we have any items that need to be MLed?
 	for i=1, GetNumLootItems() do
 		local path, name, quantity, rarity =  GetLootSlotInfo(i);
 		if rarity and  rarity >= threshold then
@@ -893,7 +889,7 @@ local threshold = GetLootThreshold();
 	end	
 	
 	if #MLItems > 0 then
-		-- if we have items to be MLed
+		-- we have items to be MLed
 		for i=1, #MLItems do
 			local item = FusedCouncil:findItem(MLItems[i], sendItems);
 			if item then
@@ -902,7 +898,7 @@ local threshold = GetLootThreshold();
 				table.insert(sendItems, FusedCouncil:createItem(MLItems[i]));
 			end
 		end
-		
+		local itemBankRecivers = {};
 		-- get a list of people that we should expect to get the loot list
 		for i=1, GetNumGroupMembers() do			
 			local name = select(1, GetMasterLootCandidate(1,i));
@@ -912,188 +908,96 @@ local threshold = GetLootThreshold();
 		end
 		
 		itemBank = sendItems;
-		--sessionID = sessID;
-		FusedCouncil:sendItemBank(sendItems, sessID);		
+		local itemBankPL = {itemBank = sendItems, sessionID = sessIDML, ML = ML, options = dbProfile.options};
+		FusedCouncil:sendTCP("itemBank",itemBankPL,"RAID",itemBankRecivers, sessIDML );		
 		FusedCouncil:update();
 	end
 end
 
+-------
+-- Q --
+-------
+
+-------
+-- R --
+-------
+
+-------
+-- S --
+-------
 function FusedCouncil:saveToDB()
-		dbProfile.initializeFromDB = true;
-		-- Session var
-		dbProfile.lootedSessUnit = lootedSessUnit;
-		dbProfile.sessionID = sessionID;
-		dbProfile.ML = ML;
-		
-		-- session item var
-		dbProfile.currentItem = currentItem;
-		dbProfile.itemBank = itemBank;
-		dbProfile.sessOptions = sessOptions;
-		self:dbug("sessots lsaved to db length ")
-		dbProfile.givenItemBank = givenItemBank;
-		dbProfile.itemBankRecivers = itemBankRecivers;
-		dbProfile.voteTimers = voteTimers;
-		dbProfile.giveTimers = giveTimers;
-		dbProfile.clearTimers = clearTimers;
-		dbProfile.clearedSessionID = clearedSessionID;
-		-- Addon Settings
-		dbProfile.usingAddon = usingAddon;
-		dbProfile.testing = testing;
-		dbProfile.dbug = dbug;
+	dbProfile.initializeFromDB = true;
+	-- current session vars
+	 dbProfile.sessID = sessID;
+	 dbProfile.ML = ML;
+	 dbProfile.lootedSessUnit = lootedSessUnit;
+	 dbProfile.sessOptions = sessOptions;
+	 dbProfile.timers = timers;
+
+	-- current session item vars
+	dbProfile.currentItem = currentItem;
+	dbProfile.itemBank = itemBank;
+	dbProfile.givenItemBank = givenItemBank;
+
+	-- prev session vars
+	dbProfile.lastSessID = lastSessID;
+	dbProfile.lastItemRecived = lastItemRecived;
+
+	-- Addon Settings
+	dbProfile.usingAddon = usingAddon;
 		
 end
-function FusedCouncil:sendItemBank(sendItems, sessID)
-	local payload = {cmd="itemBank", ML= ML, itemBank = sendItems, sessionID = sessID, options = dbProfile.options, testing = testing};
-	local serPayload = FusedCouncil:Serialize(payload);
-	self:SendCommMessage(addonPrefix, serPayload, "RAID");
-	self:dbug("sent itemBank sessid " .. sessID);
-	local itemBankTimerCount = 0;
-	-- resend items to itemBankRecivers every 4 sec untill they are removed
-	itemBankTimer = self:ScheduleRepeatingTimer(function()
-		itemBankTimerCount = itemBankTimerCount + 1;
-		
-		for i=1, #itemBankRecivers do
-			-- check to see if they are online
-			for k=1, GetNumGroupMembers() do
-				local name, _, _,_,_,_,_,online = GetRaidRosterInfo(k);
-				if itemBankRecivers[i] == name and online then
-					FusedCouncil:SendCommMessage(addonPrefix,serPayload, "WHISPER", itemBankRecivers[i]);
-					self:dbug("resending itemBank to " .. itemBankRecivers[i] .. " " .. itemBankTimerCount);
-				end
-			end		
-		end
-		
-		if itemBankTimerCount == 4 then
-			self:dbug("itemBank timer timed out");
-			for k in pairs (itemBankRecivers) do
-				itemBankRecivers[k] = nil
-			end
-			itemBankTimerCount = 0;
-			self:CancelTimer(itemBankTimer);
-		end
-	
-	end, 4);
-	
-end
-function FusedCouncil:sendGivePacket(item, player)
-	local payload = {cmd="give", item=item, player = player, sessionID = sessionID};
-	local serializedPayload = FusedCouncil:Serialize(payload);
-	FusedCouncil:SendCommMessage(addonPrefix,serializedPayload,  "WHISPER", player);
-	self:dbug("sent give cmd to " .. player);
-	local tempTable = {timer = 0, count =0, item= item, sessionID = sessionID, player = player};
-	
-	tempTable["timer"] = self:ScheduleRepeatingTimer(function() 
-			tempTable["count"] = tempTable["count"] +1;
-			for k=1, GetNumGroupMembers() do
-						local name, _, _,_,_,_,_,online = GetRaidRosterInfo(k);
-						if player == name and online then							
-							FusedCouncil:SendCommMessage(addonPrefix,serializedPayload, "WHISPER", player);
-						end
-			end
-			self:dbug("given timer count " .. tempTable["count"]);
-			if tempTable["count"] == 4 then
-			  self:CancelTimer(tempTable["timer"]);
-			  for i=#giveTimers,1 ,-1 do
-					if sessionID ~= giveTimers[i]["sessionID"] then
-						self:dbug("removing timer because mismatching sess Ids");
-						table.remove(giveTimers, i);
-					else
-						if giveTimers[i]["item"] == tempTable["item"] and giveTimers[i]["player"] == tempTable["player"]   then
-							table.remove(giveTimers, i);
-						end
-					end
-			  end
-			  LibDialog:Spawn("FC_Given_Toast",item, playername);
-			end
-		  end, 2);
-	table.insert(giveTimers, tempTable);
-end
-function FusedCouncil:sendACK(type, destination, sessionID, item)
+
+function FusedCouncil:sendACK(type, destination, sessionID, identifer)
 	self:dbug("sent ack for " .. type .. " to " .. destination)
-	local ack = {cmd="ack", type=type, sessionID=sessionID, item = item};
+	local ack = {cmd="ack", type=type, sessionID=sessionID, identifer = identifer};
 	local serializedAck = FusedCouncil:Serialize(ack);
 	FusedCouncil:SendCommMessage(addonPrefix, serializedAck, "WHISPER", destination);
 end
-function FusedCouncil:sendVote(cmd, i)
-	local payload = {cmd=cmd, vote = {from = UnitName("player"), to = currentItem["responses"][i]["player"]["name"], item = currentItem }, sessionID = sessionID};
-	local serializedPayload = FusedCouncil:Serialize(payload);
-	FusedCouncil:SendCommMessage(addonPrefix,serializedPayload, "RAID");
-	self:dbug("sent vote msg")
-	local tempTable = {timer = 0, count =0, item= currentItem, sessionID = sessionID, sendList= sessOptions["lootCouncilMembers"], vote=cmd};
-	for i=1, #sessOptions["lootCouncilMembers"] do
-		print(sessOptions["lootCouncilMembers"][i]);
-	end
-	tempTable["timer"] = self:ScheduleRepeatingTimer(function() 
-			tempTable["count"] = tempTable["count"] +1;
-			for i=1, #tempTable["sendList"] do
-					for k=1, GetNumGroupMembers() do
-						local name, _, _,_,_,_,_,online = GetRaidRosterInfo(k);
-						if tempTable["sendList"][i] == name and online then							
-							FusedCouncil:SendCommMessage(addonPrefix,serializedPayload, "WHISPER", name);
-							self:dbug("resending vote " .. tempTable["item"] .. " to " .. name .. " " .. tempTable["count"]);
-						end
-					end
-			end
-			if tempTable["count"] == 4 then
-			  self:CancelTimer(tempTable["timer"]);
-			  for i=#voteTimers,1 ,-1 do
-					if sessionID ~= voteTimers[i]["sessionID"] then
-						self:dbug("removing timer because mismatching sess Ids");
-						table.remove(voteTimers, i);
-					else
-						if voteTimers[i]["item"] == tempTable["item"] and voteTimers[i]["vote"] == tempTable["vote"] then
-							table.remove(voteTimers, i);
-						end
-					end
-			  end
-			  
-			end
-		  end, 2);
-	table.insert(voteTimers, tempTable);
-	self:dbug("vote timers now has " .. #voteTimers)
 
-end
-function FusedCouncil:sendClear()
-	local payload = {cmd="clear", sessionID = sessionID};
-	local serializedPayload = FusedCouncil:Serialize(payload);
-	FusedCouncil:SendCommMessage(addonPrefix,serializedPayload, "RAID");
-	
-	local raidMembers = {};
-	for k=1, GetNumGroupMembers() do
-		local name, _, _,_,_,_,_,online = GetRaidRosterInfo(k);
-		if online then							
-			table.insert(raidMembers, name);
+function FusedCouncil:sendTCP(cmd, contents, channel, targets, insessID, identifer)
+	local payload = {cmd=cmd, contents = contents};
+	local serPayload = FusedCouncil:Serialize(payload);
+	if channel == "RAID" then
+		self:SendCommMessage(addonPrefix, serPayload, "RAID");
+	elseif channel == "WHISPER" then
+		for i=1, #targets do
+			self:SendCommMessage(addonPrefix, serPayload, "WHISPER", targets[i]);
 		end
 	end
 	
-	local tempTable = {timer = 0, count =0,  sessionID = sessionID, sendList= raidMembers};
-	
+	local tempTable = {timer = 0, count =0, cmd = cmd,  sessionID = insessID, sendList= targets, identifer = identifer};
 	tempTable["timer"] = self:ScheduleRepeatingTimer(function() 
 			tempTable["count"] = tempTable["count"] +1;
 			for i=1, #tempTable["sendList"] do
 					for k=1, GetNumGroupMembers() do
 						local name, _, _,_,_,_,_,online = GetRaidRosterInfo(k);
 						if tempTable["sendList"][i] == name and online then							
-							FusedCouncil:SendCommMessage(addonPrefix,serializedPayload, "WHISPER", name);
-							self:dbug("resending clear to " .. name .. " " .. tempTable["count"]);
+							FusedCouncil:SendCommMessage(addonPrefix,serPayload, "WHISPER", name);
+							self:dbug("resending ".. cmd .. " to " .. name .. " " .. tempTable["count"]);
 						end
 					end
 			end
 			if tempTable["count"] == 4 then
 			  self:CancelTimer(tempTable["timer"]);
-			  for i=#clearTimers,1 ,-1 do
-					if sessionID ~= clearTimers[i]["sessionID"] then
-						self:dbug("removing timer because mismatching sess Ids");
-						table.remove(clearTimers, i);
-					else
-						table.remove(clearTimers, i);
+			  self:dbug("timer ".. cmd ..  "canceled");
+			  for i=#timers,1 ,-1 do
+					if tempTable["sessionID"] == timers[i]["sessionID"] and   timers[i]["cmd"] == tempTable["cmd"] and timers[i]["identifer"] == tempTable["identifer"] then
+						self:dbug("removing timer ".. cmd .." because time out");
+						table.remove(timers, i);
+					elseif timers[i]["sessionID"] ~= sessID then
+						self:dbug("removing timer ".. timers[i]["cmd"]  .. " because mismatch sessID");
+						table.remove(timers, i);
 					end
 			  end
 			  
 			end
 		  end, 2);
-	table.insert(clearTimers, tempTable);
+	table.insert(timers, tempTable);
+	
+	
 end
+
 function FusedCouncil:sort(sortFunc, isResponse)
 	if currentItem then
 		  local table = currentItem["responses"];
@@ -1136,21 +1040,25 @@ function FusedCouncil:sort(sortFunc, isResponse)
 	end
 
 end
+
+-------
+-- T --
+-------
+
+-------
+-- U --
+-------
 function FusedCouncil:update()
-  -- main window stuff
+	-- main window stuff
 	self:saveToDB();
+	
 	 if not currentItem and #itemBank > 0 then
 		currentItem = itemBank[1];
-	 end
-  
-	 if #itemBank == 0 and #clearTimers == 0 then
-		self:clear();
-	else 
 		mainCouncilFrame:Show();
 	 end
+  
 	
 	if currentItem then
-		
 		getglobal("FC_CurrentItemLabel"):SetText(currentItem["itemLink"]);
 		getglobal("FC_CurrentItemIlvlLabel"):SetText("ilvl: " .. currentItem["itemLevel"]);
 		local loc = _G[currentItem["itemEquipLoc"]] or "";
@@ -1230,14 +1138,19 @@ function FusedCouncil:updateEntrys()
     end
 
     getglobal("FC_entry" .. i .. "VoteButton"):SetScript("OnClick", function(self)
-	FusedCouncil:dbug("vote button pressed");
 	if self:GetText() == "Vote" then
-			if not FusedCouncil:hasVoteFrom(currentItem, UnitName("player")) then
-			FusedCouncil:dbug("sending vote")
-			  FusedCouncil:sendVote("vote", i);
-			end
+		if not FusedCouncil:hasVoteFrom(currentItem, UnitName("player")) then
+			local votePL = {item = currentItem, to = currentItem["responses"][i]["player"]["name"], sessionID = sessID};
+						--sendTCP(cmd, contents, channel, targets, insessID, identifer)
+			print("sessID is :" .. sessID);
+			FusedCouncil:sendTCP("vote", votePL, "RAID", FusedCouncil:getOptions()["lootCouncilMembers"], sessID, currentItem["itemLink"]);
+		end
       else
-        FusedCouncil:sendVote("unvote",i);
+		local votePL = {item = currentItem, to = currentItem["responses"][i]["player"]["name"], sessionID = sessID};
+							--sendTCP(cmd, contents, channel, targets, insessID, identifer)
+		print("sessID is :" .. sessID);
+		--self:getOptions()["lootCouncilMembers"]
+		FusedCouncil:sendTCP("unvote", votePL, "RAID", FusedCouncil:getOptions()["lootCouncilMembers"], sessID, currentItem["itemLink"]);
       end
 
 
@@ -1395,4 +1308,13 @@ function FusedCouncil:updateItemsWindow()
   end
 
 end
+
+
+-------
+-- V --
+-------
+
+-------------
+-- W,X,Y,Z --
+-------------
 
