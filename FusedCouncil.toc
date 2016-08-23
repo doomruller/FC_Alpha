@@ -1,6 +1,6 @@
-## Interface: 60200
+## Interface: 70000
 ## Title: FusedCouncil
-## Version: 0.8
+## Version: 1.0
 ## SavedVariables: FusedCouncilDB
 ## Author: Doomruller
 

@@ -50,7 +50,6 @@ FC_Utils ={
     local playerRank1 = select(3, GetGuildInfo(response1["player"]["name"]));
     local playerRank2 = select(3, GetGuildInfo(response2["player"]["name"]));
     -- GM is rank 0 lowest rank should be highest num
-    print(playerRank1.. " " ..playerRank2)
     return playerRank1 < playerRank2;
 
   end;

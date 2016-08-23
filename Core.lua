@@ -24,7 +24,8 @@ local mainCouncilFrame;
 
 -- Addon Settings
 local usingAddon;
-local version = "7.0.3-v.93";
+local version = "7.0.3-v1.0";
+local dbug;
 local dbProfile;
 local addonPrefix = "FCPREFIX";
 local dbDefaults = {
@@ -462,7 +463,6 @@ function FusedCouncil:CommHandler(prefix, message, distrubtuion, sender)
 			end
 			
 			if payload["cmd"] == "vote" then
-			print(sessID .. " " ..  payload["contents"]["sessionID"])
 				if sessID == payload["contents"]["sessionID"] and self:isCouncilMember() then 
 					local item = self:findItem(payload["contents"]["item"]["itemLink"], itemBank);
 					local response = self:findResponse(item, payload["contents"]["to"]);
@@ -476,9 +476,7 @@ function FusedCouncil:CommHandler(prefix, message, distrubtuion, sender)
 			end
 			
 			if payload["cmd"] == "unvote" then
-				print("got unvote cmd sessid: " .. sessID .. " and payload is :".. payload["contents"]["sessionID"])
 				if sessID == payload["contents"]["sessionID"] and self:isCouncilMember() then 
-					print("made it inside of unvote")
 					local item = self:findItem(payload["contents"]["item"]["itemLink"], itemBank);
 					local response = self:findResponse(item, payload["contents"]["to"]);
 					for i=#response["votes"], 1, -1 do
@@ -519,7 +517,6 @@ function FusedCouncil:CommHandler(prefix, message, distrubtuion, sender)
 			
 			if payload["cmd"] == "ack" then
 				-- {cmd="ack", type=type, sessionID=sessionID, identifer = identifer}
-				print("recived ack " ..payload["type"] .." for sess " ..  payload["sessionID"])
 				 for i=#timers,1 ,-1 do
 					if payload["sessionID"] == timers[i]["sessionID"] and   timers[i]["cmd"] == payload["type"]  then
 						if payload["identifer"] then
@@ -698,7 +695,9 @@ end
 -- D --
 -------
 function FusedCouncil:dbug(msg)
-		print(msg);
+		if dbug then 
+			print(msg);
+		end
 
 end
 -------
@@ -718,7 +717,6 @@ function FusedCouncil:findItem(itemLink, itemTable)
 end
 function FusedCouncil:findResponse(item, name)
 	for i=1, #item["responses"] do
-		print(i)
 		if item["responses"][i]["player"]["name"] == name then
 			return item["responses"][i];
 		end
@@ -797,7 +795,7 @@ function FusedCouncil:initializeVars()
 	currentItem = nil;
 	itemBank = {};
 	givenItemBank = {};
-	
+	dbug =false;
 	
 	
 	-- current session vars
@@ -812,6 +810,7 @@ function FusedCouncil:initializeVars()
 	dbProfile.currentItem = nil;
 	dbProfile.itemBank = {};
 	dbProfile.givenItemBank = {};
+	dbProfile.dbug = false;
 	
 end
 function FusedCouncil:isCouncilMember()
@@ -861,7 +860,8 @@ function FusedCouncil:loadFromDB()
 	lastItemRecived = dbProfile.lastItemRecived;
 
 	-- Addon Settings
-	usingAddon = dbProfile.usingAddon;		
+	usingAddon = dbProfile.usingAddon;
+	dbug = dbProfile.dbug;
 end
 -------
 -- M --
@@ -947,6 +947,7 @@ function FusedCouncil:saveToDB()
 
 	-- Addon Settings
 	dbProfile.usingAddon = usingAddon;
+	dbProfile.dbug = dbug;
 		
 end
 
@@ -1022,7 +1023,7 @@ function FusedCouncil:sort(sortFunc, isResponse)
 
 			for i=1, #table-1 do
 			  local j=i;
-			  while j > 0 and sortFunc(table[j], table[j+1], localOptions) do
+			  while j > 0 and sortFunc(table[j], table[j+1], self:getOptions()) do
 				isSorted = false;
 				local temp = table[j];
 				table[j] = table[j+1];
@@ -1144,13 +1145,11 @@ function FusedCouncil:updateEntrys()
 		if not FusedCouncil:hasVoteFrom(currentItem, UnitName("player")) then
 			local votePL = {item = currentItem, to = currentItem["responses"][i]["player"]["name"], sessionID = sessID};
 						--sendTCP(cmd, contents, channel, targets, insessID, identifer)
-			print("sessID is :" .. sessID);
 			FusedCouncil:sendTCP("vote", votePL, "RAID", FusedCouncil:getOptions()["lootCouncilMembers"], sessID, currentItem["itemLink"]);
 		end
       else
 		local votePL = {item = currentItem, to = currentItem["responses"][i]["player"]["name"], sessionID = sessID};
 							--sendTCP(cmd, contents, channel, targets, insessID, identifer)
-		print("sessID is :" .. sessID);
 		--self:getOptions()["lootCouncilMembers"]
 		FusedCouncil:sendTCP("unvote", votePL, "RAID", FusedCouncil:getOptions()["lootCouncilMembers"], sessID, currentItem["itemLink"]);
       end
