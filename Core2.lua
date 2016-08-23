@@ -473,7 +473,7 @@ function FusedCouncil:CommHandler(prefix, message, distrubtuion, sender)
 			end
 			
 			if payload["cmd"] == "unvote" then
-				if sessID == payload["sessionID"] and self:isCouncilMember() then 
+				if sessID == payload["contents"]["sessionID"] and self:isCouncilMember() then 
 					local item = self:findItem(payload["contents"]["item"]["itemLink"], itemBank);
 					local response = self:findResponse(item, payload["contents"]["to"]);
 					for i=#response["votes"], 1, -1 do
@@ -1056,10 +1056,15 @@ function FusedCouncil:updateEntrys()
 	if self:GetText() == "Vote" then
 		if not FusedCouncil:hasVoteFrom(currentItem, UnitName("player")) then
 			local votePL = {item = currentItem, to = currentItem["responses"][i]["player"]["name"], sessionID = sessID};
+						--sendTCP(cmd, contents, channel, targets, insessID, identifer)
+			print("sessID is :" .. sessID);
 			FusedCouncil:sendTCP("vote", votePL, "RAID", sessOptions["lootCouncilMembers"], sessID, currentItem["itemLink"]);
 		end
       else
 		local votePL = {item = currentItem, to = currentItem["responses"][i]["player"]["name"], sessionID = sessID};
+							--sendTCP(cmd, contents, channel, targets, insessID, identifer)
+		print("sessID is :" .. sessID);
+		--self:getOptions()["lootCouncilMembers"]
 		FusedCouncil:sendTCP("unvote", votePL, "RAID", sessOptions["lootCouncilMembers"], sessID, currentItem["itemLink"]);
       end
 
