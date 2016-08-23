@@ -227,9 +227,10 @@ function lootPopup:getPlayersCurrentItem(item)
     return nil;
   end
   itemLink1 = GetInventoryItemLink("player", GetInventorySlotInfo(slot[1] or slot));
-
   if not itemLink1 and slot["or"] then
     itemLink1 = GetInventoryItemLink("player", GetInventorySlotInfo(slot['or']));
+  elseif not itemLink1 and slot == "SecondaryHandSlot" then
+	 itemLink1 = GetInventoryItemLink("player", GetInventorySlotInfo("MainHandSlot"));
   end
 
   if slot[2] then

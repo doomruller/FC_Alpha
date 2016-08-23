@@ -24,7 +24,7 @@ local mainCouncilFrame;
 
 -- Addon Settings
 local usingAddon;
-local version = "7.0.3-v.91";
+local version = "7.0.3-v.93";
 local dbProfile;
 local addonPrefix = "FCPREFIX";
 local dbDefaults = {
@@ -42,6 +42,7 @@ local dbDefaults = {
 
 
 function FusedCouncil:OnInitialize()
+	
 	-- initialize DB with defaults
 	self.db = LibStub("AceDB-3.0"):New("FusedCouncilDB",dbDefaults, true);
 	self.db:RegisterDefaults(dbDefaults);
@@ -500,8 +501,8 @@ function FusedCouncil:CommHandler(prefix, message, distrubtuion, sender)
 				
 				if not self:isML() then
 					self:sendACK("clear",sender, sessID);
-					local localSessNum, localSessName = string.find(payload["contents"]["sessionID"], "?(%d+)?(%a+)");
-					local sessNum, sessName = string.find(sessID, "?(%d+)?(%a+)");
+					local _,_,localSessNum, localSessName = string.find(payload["contents"]["sessionID"], "(%d+)(%a+)");
+					local _,_,sessNum, sessName = string.find(sessID, "(%d+)(%a+)");
 					if localSessName == sessName and localSessNum > sessNum then
 						-- we are getting old clear from prev session ignore it						
 					else
@@ -717,6 +718,7 @@ function FusedCouncil:findItem(itemLink, itemTable)
 end
 function FusedCouncil:findResponse(item, name)
 	for i=1, #item["responses"] do
+		print(i)
 		if item["responses"][i]["player"]["name"] == name then
 			return item["responses"][i];
 		end
